@@ -1,0 +1,197 @@
+23. Retrieve Payments with Courier Information
+
+Select P.paymentid, P.courierid, C.trackingnumber, P.amount, P.paymentdate
+From Payment P
+Inner Join Courier C On P.courierid = C.courierid;
+
+24. Retrieve Payments with Location Information
+
+Select P.paymentid, P.locationid, L.locationname, P.amount, P.paymentdate
+From Payment P
+Inner Join Location L On P.locationid = L.locationid;
+
+25. Retrieve Payments with Courier and Location Information
+
+Select P.paymentid, C.trackingnumber, L.locationname, P.amount, P.paymentdate
+From Payment P
+Inner Join Courier C On P.courierid = C.courierid
+Inner Join Location L On P.locationid = L.locationid;
+
+26. List all payments with courier details
+
+Select P.*, C.sendername, C.receivername, C.weight, C.status
+From Payment P
+Inner Join Courier C On P.courierid = C.courierid;
+
+27. Total payments received for each courier
+
+Select P.courierid, C.trackingnumber, Sum(P.amount) As Totalpayments
+From Payment P
+Inner Join Courier C On P.courierid = C.courierid
+Group By P.courierid, C.trackingnumber;
+
+28. List payments made on a specific date
+
+Select * 
+From Payment
+Where Paymentdate = '2025-03-21';
+
+29. Get Courier Information for Each Payment
+
+Select P.paymentid, C.courierid, C.trackingnumber, C.sendername, C.receivername, C.weight, C.status
+From Payment P
+Inner Join Courier C On P.courierid = C.courierid;
+
+ 30. Get Payment Details with Location
+
+Select P.paymentid, P.amount, P.paymentdate, L.locationid, L.locationname, L.address
+From Payment P
+Inner Join Location L On P.locationid = L.locationid;
+
+31. Calculating Total Payments for Each Courier
+
+Select P.courierid, C.trackingnumber, Sum(P.amount) As Totalpayments
+From Payment P
+Inner Join Courier C On P.courierid = C.courierid
+Group By P.courierid, C.trackingnumber;
+
+ 32. List Payments Within a Date Range
+
+Select *
+From Payment
+Where Paymentdate Between '2025-03-01' And '2025-03-31';
+
+
+33. Retrieve a list of all users and their corresponding courier records, including cases where there are no matches on either side
+
+Select U.userid, U.name, C.courierid, C.trackingnumber, C.status
+From User U
+Left Join Courier C On U.name = C.sendername
+Union
+Select U.userid, U.name, C.courierid, C.trackingnumber, C.status
+From User U
+Right Join Courier C On U.name = C.sendername;
+
+34. Retrieve a list of all couriers and their corresponding services, including cases where there are no matches on either side
+
+Select C.courierid, C.trackingnumber, Cs.serviceid, Cs.servicename, Cs.cost
+From Courier C
+Left Join Courierservices Cs On C.weight <= Cs.cost
+Union
+Select C.courierid, C.trackingnumber, Cs.serviceid, Cs.servicename, Cs.cost
+From Courier C
+Right Join Courierservices Cs On C.weight <= Cs.cost;
+
+35. Retrieve a list of all employees and their corresponding payments, including cases where there are no matches on either side
+
+Select E.employeeid, E.name, P.paymentid, P.amount, P.paymentdate
+From Employee E
+Left Join Payment P On E.name = P.courierid
+Union
+Select E.employeeid, E.name, P.paymentid, P.amount, P.paymentdate
+From Employee E
+Right Join Payment P On E.name = P.courierid;
+
+36. List all users and all courier services, showing all possible combinations. 
+Select U.userid, U.name, Cs.serviceid, Cs.servicename
+From User U
+Cross Join Courierservices Cs;
+
+37. List all employees and all locations, showing all possible combinations: 
+Select E.employeeid, E.name, L.locationid, L.locationname
+From Employee E
+Cross Join Location L;
+
+38. Retrieve a list of couriers and their corresponding sender information (if available) 
+ Select C.courierid, C.trackingnumber, U.name As Sendername, U.address As Senderaddress
+From Courier C
+Left Join User U On C.sendername = U.name;
+
+39. Retrieve a list of couriers and their corresponding receiver information (if available):  
+Select C.courierid, C.trackingnumber, Cs.serviceid, Cs.servicename, Cs.cost
+From Courier C
+Left Join Courierservices Cs On C.weight <= Cs.cost;
+
+
+40. Retrieve a list of couriers along with the courier service details (if available):
+  Select C.courierid, C.trackingnumber, Cs.serviceid, Cs.servicename, Cs.cost
+From Courier C
+Left Join Courierservices Cs On C.weight <= Cs.cost;
+
+41. Retrieve a list of employees and the number of couriers assigned to each employee:  
+Select E.employeeid, E.name, Count(C.courierid) As Totalcouriers
+From Employee E
+Left Join Courier C On E.name = C.sendername
+Group By E.employeeid, E.name;
+
+42. Retrieve a list of locations and the total payment amount received at each location:  
+Select L.locationid, L.locationname, Sum(P.amount) As Totalpayments
+From Location L
+Left Join Payment P On L.locationid = P.locationid
+Group By L.locationid, L.locationname;
+
+43. Retrieve all couriers sent by the same sender (based on SenderName). 
+ Select L.locationid, L.locationname, Sum(P.amount) As Totalpayments
+From Location L
+Left Join Payment P On L.locationid = P.locationid
+Group By L.locationid, L.locationname;
+
+44. List all employees who share the same role.  
+Select E1.employeeid, E1.name, E1.role
+From Employee E1
+Where E1.role In (
+    Select E2.role
+    From Employee E2
+    Group By E2.role
+    Having Count(*) > 1
+);
+
+45. Retrieve all payments made for couriers sent from the same location.
+  Select P.paymentid, C.courierid, C.senderaddress, P.amount
+From Payment P
+Join Courier C On P.courierid = C.courierid
+Where C.senderaddress In (
+    Select C2.senderaddress
+    From Courier C2
+    Group By C2.senderaddress
+    Having Count(*) > 1
+);
+
+46. Retrieve all couriers sent from the same location (based on SenderAddress). 
+ Select C.courierid, C.trackingnumber, C.senderaddress
+From Courier C
+Where C.senderaddress In (
+    Select C2.senderaddress
+    From Courier C2
+    Group By C2.senderaddress
+    Having Count(*) > 1
+);
+
+47. List employees and the number of couriers they have delivered:  
+Select E.employeeid, E.name, Count(C.courierid) As Totaldelivered
+From Employee E
+Left Join Courier C On E.name = C.sendername
+Where C.status = 'delivered'
+Group By E.employeeid, E.name;
+
+48. Find couriers that were paid an amount greater than the cost of their respective courier services 
+Select C.courierid, C.trackingnumber, P.amount, Cs.cost
+From Courier C
+Join Payment P On C.courierid = P.courierid
+Join Courierservices Cs On C.weight <= Cs.cost
+Where P.amount > Cs.cost;
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

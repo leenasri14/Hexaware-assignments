@@ -1,0 +1,80 @@
+1. List all customers:  
+    Ans:
+        select *  from User;
+
+
+2. List all orders for a specific customer:  
+ Ans:
+        select *  from Courier where SenderName = 'Michael Scott';
+
+
+3. List all couriers:  
+ Ans:
+        select * from Courier;
+
+
+
+4. List all packages for a specific order:  
+ Ans:
+        Select* From Courier
+       Where CourierID = 1;
+
+5. List all deliveries for a specific courier:  
+ Ans:
+        Select * From Courier
+        Where Status = 'Delivered' And CourierID = 5;
+
+
+6. List all undelivered packages:  
+ Ans:
+        Select * From Courier
+        Where Status != 'Delivered';
+
+
+
+7. List all packages that are scheduled for delivery today:  
+ Ans:
+        Select * From Courier
+        Where DeliveryDate = Curdate();
+
+
+
+8. List all packages with a specific status:  
+ Ans:
+        Select *  From Courier
+        Where Status = 'In Transit';
+
+
+
+9. Calculate the total number of packages for each courier.  
+ Ans:
+        Select CourierID, Count(*) AS TotalPackages From Courier
+        Group by CourierID;
+
+
+10. Find the average delivery time for each courier
+ Ans:
+        Select CourierID,  
+     avg(datediff(DeliveryDate, Now())) as AvgDelivery
+      From Courie  Where Status = 'Delivered'  Group By CourierID;
+
+
+  
+11. List all packages with a specific weight range:  
+ Ans:
+        Select * From Courier
+        Where Weight Between 5.00 And 10.00;
+
+
+12. Retrieve employees whose names contain 'John'  
+ Ans:
+        Select * From Employee
+       Where Name Like '%John%';
+
+
+
+13. Retrieve all courier records with payments greater than $50. 
+Ans: 
+        Select c.* From Courier c
+        Join Payment p on c.CourierID = p.CourierID
+        Where p.Amount > 50.00;
