@@ -1,0 +1,105 @@
+1. Write a SQL query to insert at least 10 sample records into each table. 
+Venue:
+insert into venu (venue_id, venue_name, address) values
+(1, 'madison square garden', 'new york, ny'),
+(2, 'wembley stadium', 'london, uk'),
+(3, 'sydney opera house', 'sydney, au'),
+(4, 'staples center', 'los angeles, ca'),
+(5, 'national stadium', 'beijing, cn'),
+(6, 'tokyo dome', 'tokyo, jp'),
+(7, 'maracanã stadium', 'rio de janeiro, br'),
+(8, 'rajiv gandhi stadium', 'hyderabad, in'),
+(9, 'hollywood bowl', 'los angeles, ca'),
+(10, 'o2 arena', 'london, uk');
+
+Event
+insert into event (event_id, event_name, event_date, event_time, venue_id, total_seats, available_seats, ticket_price, event_type, booking_id)
+values
+(1, 'world cup finals', '2025-06-15', '18:00:00', 1, 50000, 15000, 2000.00, 'sports', null),
+(2, 'concert: coldplay', '2025-08-10', '20:00:00', 3, 10000, 5000, 1500.00, 'concert', null),
+(3, 'nba playoffs', '2025-05-20', '19:30:00', 4, 30000, 10000, 1800.00, 'sports', null),
+(4, 'opera night', '2025-07-25', '21:00:00', 3, 2000, 300, 2500.00, 'movie', null),
+(5, 'tokyo music festival', '2025-09-05', '17:00:00', 6, 20000, 8000, 1200.00, 'concert', null),
+(6, 'ipl finals', '2025-05-30', '18:00:00', 8, 70000, 50000, 2100.00, 'sports', null),
+(7, 'movie premiere: avengers', '2025-06-20', '19:00:00', 10, 1500, 200, 900.00, 'movie', null),
+(8, 'rock fest', '2025-08-18', '20:30:00', 9, 12000, 2000, 1500.00, 'concert', null),
+(9, 'marathon opening ceremony', '2025-04-10', '07:00:00', 5, 10000, 6000, 500.00, 'sports', null),
+(10, 'hollywood night', '2025-09-10', '20:00:00', 9, 5000, 3000, 1600.00, 'concert', null);
+
+Customer
+insert into customer (customer_id, customer_name, email, phone_number, booking_id)
+values
+(1, 'john doe', 'john.doe@example.com', '1234567890', null),
+(2, 'alice smith', 'alice.smith@example.com', '9876543210', null),
+(3, 'bob brown', 'bob.brown@example.com', '1122334455', null),
+(4, 'michael scott', 'michael.scott@example.com', '9988776655', null),
+(5, 'pam beesly', 'pam.beesly@example.com', '8899776655', null),
+(6, 'jim halpert', 'jim.halpert@example.com', '6677889900', null),
+(7, 'dwight schrute', 'dwight.schrute@example.com', '5544332211', null),
+(8, 'stanley hudson', 'stanley.hudson@example.com', '7766554433', null),
+(9, 'oscar martinez', 'oscar.martinez@example.com', '8899001122', null),
+(10, 'kevin malone', 'kevin.malone@example.com', '2233445566', null);
+
+Booking
+insert into booking (booking_id, customer_id, event_id, num_tickets, total_cost, booking_date)
+values
+(1, 1, 1, 5, 10000.00, '2025-05-01 12:00:00'),
+(2, 2, 2, 2, 3000.00, '2025-05-02 14:00:00'),
+(3, 3, 3, 8, 14400.00, '2025-05-03 16:00:00'),
+(4, 4, 4, 4, 10000.00, '2025-05-04 10:00:00'),
+(5, 5, 5, 6, 7200.00, '2025-05-05 18:00:00'),
+(6, 6, 6, 3, 6300.00, '2025-05-06 20:00:00'),
+(7, 7, 7, 7, 6300.00, '2025-05-07 13:00:00'),
+(8, 8, 8, 10, 15000.00, '2025-05-08 19:00:00'),
+(9, 9, 9, 4, 2000.00, '2025-05-09 09:00:00'),
+(10, 10, 10, 1, 1600.00, '2025-05-10 11:00:00');
+
+2. Write a SQL query to list all Events. 
+Select * from event;
+
+3. Write a SQL query to select events with available tickets. 
+Select * from Event
+where available_seats > 0;
+
+4. Write a SQL query to select events name partial match with ‘cup’. 
+select * from event
+where event_name like '%cup%';
+
+5. Write a SQL query to select events with ticket price range is between 1000 to 2500. 
+select * from event
+where ticket_price between 1000 and 2500;
+
+6. Write a SQL query to retrieve events with dates falling within a specific range. 
+select * from event
+where event_date between '2025-06-01' and '2025-08-31';
+
+7. Write a SQL query to retrieve events with available tickets that also have "Concert" in their name. 
+select * from event
+where available_seats > 0 and event_type = 'concert';
+
+8. Write a SQL query to retrieve users in batches of 5, starting from the 6th user.
+ select * from customer
+limit 5 offset 5;
+
+9. Write a SQL query to retrieve bookings details contains booked no of ticket more than 4. 
+select * from booking
+where num_tickets > 4;
+
+10. Write a SQL query to retrieve customer information whose phone number end with ‘000’ 
+select * 
+from customer
+where phone_number like '%000';
+
+11. Write a SQL query to retrieve the events in order whose seat capacity more than 15000. 
+select * 
+from event
+where total_seats > 15000
+order by total_seats desc;
+
+
+12. Write a SQL query to select events name not start with ‘x’, ‘y’, ‘z’ 
+select * 
+from event
+where event_name not like 'x%' and
+      event_name not like 'y%' and
+      event_name not like 'z%';

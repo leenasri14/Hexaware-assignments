@@ -1,0 +1,51 @@
+Tasks 
+1: Database Design:   
+  create database ticketbookingsystem;
+
+2. Write SQL scripts to create the mentioned tables with appropriate data types, constraints, and 
+relationships.  
+• Venu  
+create table venu (
+    venue_id int primary key,
+    venue_name varchar(255) not null,
+    address text not null
+);
+
+• Event 
+create table event (
+    event_id int primary key,
+    event_name varchar(255) not null,
+    event_date date not null,
+    event_time time not null,
+    venue_id int,
+    total_seats int not null,
+    available_seats int not null,
+    ticket_price decimal(8, 2) not null,
+    event_type enum('movie', 'sports', 'concert') not null,
+    booking_id int,
+    foreign key (venue_id) references venu(venue_id),
+    foreign key (booking_id) references booking(booking_id) on delete set null
+);
+ 
+• Customers  
+create table customer (
+    customer_id int primary key,
+    customer_name varchar(255) not null,
+    email varchar(255) unique not null,
+    phone_number varchar(20) not null,
+    booking_id int,
+    foreign key (booking_id) references booking(booking_id) on delete set null
+);
+
+• Booking 
+create table booking (
+    booking_id int primary key,
+    customer_id int,
+    event_id int,
+    num_tickets int not null,
+    total_cost decimal(10, 2) not null,
+    booking_date datetime default current_timestamp,
+    foreign key (customer_id) references customer(customer_id),
+    foreign key (event_id) references event(event_id)
+);
+
