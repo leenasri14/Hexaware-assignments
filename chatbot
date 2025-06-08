@@ -1,0 +1,604 @@
+from sqlalchemy import create_engine
+from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.orm import sessionmaker
+from config import settings
+
+MyDatabase_URL = settings.DATABASE_URL
+
+engine = create_engine(MyDatabase_URL)
+SessionLocal = sessionmaker(bind=engine)
+
+Base = declarative_base()
+
+_________________________________________________________________________
+
+# Import BaseSettings from pydantic library
+# Pydantic provides data validation and settings management
+from pydantic import BaseSettings
+
+# Define our Settings class that inherits from BaseSettings
+# This will hold all our configuration variables with type hints
+class Settings(BaseSettings):
+    # Database connection URL with default value
+    # Format: postgresql://username:password@hostname/database
+    # Default is provided but should be overridden in .env file
+    DATABASE_URL: str = "postgresql://user:password@localhost/dbname"
+    
+    # Secret key for JWT token signing
+    # Should be a long, random string in production
+    # Default is provided for development only
+    SECRET_KEY: str = "your-secret-key-here"
+    
+    # Algorithm used for JWT token signing
+    # HS256 is a common secure algorithm using symmetric key
+    ALGORITHM: str = "HS256"
+    
+    # Token expiration time in minutes
+    # 30 minutes is a reasonable default for access tokens
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
+    
+    # Azure OpenAI API key
+    # Needed for chatbot functionality
+    AZURE_OPENAI_API_KEY: str = "your-azure-openai-key"
+    
+    # Azure OpenAI endpoint URL
+    # Points to your specific Azure OpenAI resource
+    AZURE_OPENAI_ENDPOINT: str = "https://your-resource-name.openai.azure.com"
+    
+    # Azure OpenAI deployment name
+    # Specific to your deployed model
+    AZURE_OPENAI_DEPLOYMENT_NAME: str = "your-deployment-name"
+    
+    # Nested Config class for additional settings
+    class Config:
+        # Specifies that settings should also be read from .env file
+        # .env file will override the default values above
+        env_file = ".env"
+
+# Create an instance of Settings that will be imported throughout the app
+# This single instance ensures consistent configuration
+settings = Settings()
+
+____________________________________________________________
+
+from pydantic import BaseModel, EmailStr
+from typing import Optional, List
+from datetime import datetime, date
+
+class Token(BaseModel):
+    access_token: str
+    token_type: str
+
+class TokenData(BaseModel):
+    username: Optional[str] = None
+    scopes: List[str] = []
+
+class UserBase(BaseModel):
+    username: str
+    email: EmailStr
+    full_name: Optional[str] = None
+
+class UserCreate(UserBase):
+    password: str
+
+class User(UserBase):
+    id: int
+    is_active: bool
+    created_at: datetime
+    updated_at: Optional[datetime] = None
+    
+    class Config:
+        orm_mode = True
+
+class UserWithRoles(User):
+    roles: List[str] = []
+
+class ProjectBase(BaseModel):
+    name: str
+    description: Optional[str] = None
+
+class ProjectCreate(ProjectBase):
+    start_date: date
+    end_date: date
+
+class Project(ProjectBase):
+    id: int
+    start_date: date
+    end_date: date
+    manager_id: int
+    status: str
+    created_at: datetime
+    
+    class Config:
+        orm_mode = True
+
+class TaskBase(BaseModel):
+    title: str
+    description: Optional[str] = None
+
+class TaskCreate(TaskBase):
+    project_id: int
+    priority: str = "medium"
+    due_date: date
+    estimated_hours: float = 1.0
+
+class Task(TaskBase):
+    id: int
+    project_id: int
+    status: str
+    priority: str
+    due_date: date
+    estimated_hours: float
+    created_at: datetime
+    updated_at: Optional[datetime] = None
+    
+    class Config:
+        orm_mode = True
+
+class ChatMessage(BaseModel):
+    content: str
+
+class ChatResponse(BaseModel):
+    response: str
+    sources: Optional[List[str]] = None
+
+class RoleBase(BaseModel):
+    name: str
+    description: Optional[str] = None
+
+class Role(RoleBase):
+    id: int
+    
+    class Config:
+        orm_mode = True
+
+class PermissionBase(BaseModel):
+    name: str
+    description: Optional[str] = None
+
+class Permission(PermissionBase):
+    id: int
+    
+    class Config:
+        orm_mode = True
+
+____________________________________________________________________
+
+from fastapi import FastAPI, Depends, HTTPException, status
+from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
+from fastapi.middleware.cors import CORSMiddleware
+from datetime import datetime, timedelta
+from typing import Optional, List
+from jose import JWTError, jwt
+from passlib.context import CryptContext
+from pydantic import BaseModel
+from sqlalchemy.orm import Session
+import models
+import crud
+import schemas
+from database_connectivity import SessionLocal, engine
+from langchain_agents import setup_agents
+from config import settings
+
+# Initialize database
+models.Base.metadata.create_all(bind=engine)
+
+app = FastAPI()
+
+# CORS setup
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Security setup
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
+
+# Initialize LangChain agents
+agents = setup_agents()
+
+@app.on_event("startup")
+async def startup_event():
+    # Initialize default roles and permissions
+    db = SessionLocal()
+    try:
+        crud.initialize_roles_and_permissions(db)
+    finally:
+        db.close()
+
+# Authentication endpoints
+@app.post("/token", response_model=schemas.Token)
+async def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(crud.get_db)):
+    user = crud.authenticate_user(db, form_data.username, form_data.password)
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Incorrect username or password",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    access_token = crud.create_access_token(
+        data={"sub": user.username, "scopes": form_data.scopes}
+    )
+    return {"access_token": access_token, "token_type": "bearer"}
+
+@app.get("/users/me", response_model=schemas.UserWithRoles)
+async def read_users_me(current_user: schemas.User = Depends(crud.get_current_active_user)):
+    return current_user
+
+# Chatbot endpoints
+@app.post("/chat/send", response_model=schemas.ChatResponse)
+async def send_chat_message(
+    message: schemas.ChatMessage,
+    current_user: schemas.User = Depends(crud.get_current_active_user),
+    db: Session = Depends(crud.get_db)
+):
+    # Process message with LangChain agents
+    response = await agents.process_message(message.content, current_user, db)
+    
+    # Save conversation to database
+    chat_session = crud.get_or_create_chat_session(db, current_user.id)
+    crud.create_chat_message(db, chat_session.id, current_user.id, message.content, False)
+    crud.create_chat_message(db, chat_session.id, current_user.id, response.response, True)
+    
+    return response
+
+# Project management endpoints
+@app.post("/projects", response_model=schemas.Project)
+async def create_project(
+    project: schemas.ProjectCreate,
+    current_user: schemas.User = Depends(crud.get_current_active_user),
+    db: Session = Depends(crud.get_db)
+):
+    if not crud.user_has_permission(db, current_user.id, "project:create"):
+        raise HTTPException(status_code=403, detail="Not enough permissions")
+    return crud.create_project(db, project, current_user.id)
+
+@app.get("/projects", response_model=List[schemas.Project])
+async def read_projects(
+    skip: int = 0,
+    limit: int = 100,
+    current_user: schemas.User = Depends(crud.get_current_active_user),
+    db: Session = Depends(crud.get_db)
+):
+    if crud.user_has_permission(db, current_user.id, "project:read_all"):
+        projects = crud.get_projects(db, skip=skip, limit=limit)
+    else:
+        projects = crud.get_user_projects(db, current_user.id, skip=skip, limit=limit)
+    return projects
+
+# Task management endpoints
+@app.post("/tasks", response_model=schemas.Task)
+async def create_task(
+    task: schemas.TaskCreate,
+    current_user: schemas.User = Depends(crud.get_current_active_user),
+    db: Session = Depends(crud.get_db)
+):
+    if not crud.user_has_permission(db, current_user.id, "task:create"):
+        raise HTTPException(status_code=403, detail="Not enough permissions")
+    return crud.create_task(db, task, current_user.id)
+
+@app.get("/tasks", response_model=List[schemas.Task])
+async def read_tasks(
+    project_id: Optional[int] = None,
+    skip: int = 0,
+    limit: int = 100,
+    current_user: schemas.User = Depends(crud.get_current_active_user),
+    db: Session = Depends(crud.get_db)
+):
+    if project_id:
+        if not crud.user_has_project_access(db, current_user.id, project_id):
+            raise HTTPException(status_code=403, detail="No access to this project")
+        tasks = crud.get_project_tasks(db, project_id, skip=skip, limit=limit)
+    else:
+        tasks = crud.get_user_tasks(db, current_user.id, skip=skip, limit=limit)
+    return tasks
+
+# Admin endpoints
+@app.post("/admin/users", response_model=schemas.User)
+async def create_user(
+    user: schemas.UserCreate,
+    current_user: schemas.User = Depends(crud.get_current_active_user),
+    db: Session = Depends(crud.get_db)
+):
+    if not crud.user_has_permission(db, current_user.id, "user:create"):
+        raise HTTPException(status_code=403, detail="Not enough permissions")
+    return crud.create_user(db, user)
+
+@app.get("/admin/users", response_model=List[schemas.UserWithRoles])
+async def read_users(
+    skip: int = 0,
+    limit: int = 100,
+    current_user: schemas.User = Depends(crud.get_current_active_user),
+    db: Session = Depends(crud.get_db)
+):
+    if not crud.user_has_permission(db, current_user.id, "user:read"):
+        raise HTTPException(status_code=403, detail="Not enough permissions")
+    return crud.get_users(db, skip=skip, limit=limit)
+
+_____________________________________________________________________
+
+from sqlalchemy.orm import Session
+import models
+import schemas
+from passlib.context import CryptContext
+from datetime import datetime, timedelta
+from jose import jwt
+from typing import Optional
+from fastapi.security import OAuth2PasswordBearer
+from fastapi import Depends, HTTPException, status
+from config import settings
+
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
+
+# Authentication functions
+def authenticate_user(db: Session, username: str, password: str):
+    user = get_user_by_username(db, username)
+    if not user or not verify_password(password, user.hashed_password):
+        return False
+    return user
+
+def verify_password(plain_password: str, hashed_password: str):
+    return pwd_context.verify(plain_password, hashed_password)
+
+def get_password_hash(password: str):
+    return pwd_context.hash(password)
+
+def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
+    to_encode = data.copy()
+    if expires_delta:
+        expire = datetime.utcnow() + expires_delta
+    else:
+        expire = datetime.utcnow() + timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
+    to_encode.update({"exp": expire})
+    return jwt.encode(to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
+
+def get_current_user(db: Session = Depends(get_db), token: str = Depends(oauth2_scheme)):
+    credentials_exception = HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Could not validate credentials",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+    try:
+        payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
+        username: str = payload.get("sub")
+        if username is None:
+            raise credentials_exception
+        token_data = schemas.TokenData(username=username)
+    except JWTError:
+        raise credentials_exception
+    user = get_user_by_username(db, username=token_data.username)
+    if user is None:
+        raise credentials_exception
+    return user
+
+def get_current_active_user(current_user: schemas.User = Depends(get_current_user)):
+    if not current_user.is_active:
+        raise HTTPException(status_code=400, detail="Inactive user")
+    return current_user
+
+# User operations
+def get_user(db: Session, user_id: int):
+    return db.query(models.User).filter(models.User.id == user_id).first()
+
+def get_user_by_username(db: Session, username: str):
+    return db.query(models.User).filter(models.User.username == username).first()
+
+def get_users(db: Session, skip: int = 0, limit: int = 100):
+    return db.query(models.User).offset(skip).limit(limit).all()
+
+def create_user(db: Session, user: schemas.UserCreate):
+    hashed_password = get_password_hash(user.password)
+    db_user = models.User(
+        username=user.username,
+        email=user.email,
+        hashed_password=hashed_password,
+        full_name=user.full_name
+    )
+    db.add(db_user)
+    db.commit()
+    db.refresh(db_user)
+    return db_user
+
+# Project operations
+def get_project(db: Session, project_id: int):
+    return db.query(models.Project).filter(models.Project.id == project_id).first()
+
+def get_projects(db: Session, skip: int = 0, limit: int = 100):
+    return db.query(models.Project).offset(skip).limit(limit).all()
+
+def get_user_projects(db: Session, user_id: int, skip: int = 0, limit: int = 100):
+    return db.query(models.Project).filter(
+        (models.Project.manager_id == user_id) |
+        (models.Task.project_id == models.Project.id) &
+        (models.TaskAssignment.task_id == models.Task.id) &
+        (models.TaskAssignment.user_id == user_id)
+    ).offset(skip).limit(limit).all()
+
+def create_project(db: Session, project: schemas.ProjectCreate, manager_id: int):
+    db_project = models.Project(
+        name=project.name,
+        description=project.description,
+        start_date=project.start_date,
+        end_date=project.end_date,
+        manager_id=manager_id,
+        status="planned"
+    )
+    db.add(db_project)
+    db.commit()
+    db.refresh(db_project)
+    return db_project
+
+# Task operations
+def get_task(db: Session, task_id: int):
+    return db.query(models.Task).filter(models.Task.id == task_id).first()
+
+def get_tasks(db: Session, skip: int = 0, limit: int = 100):
+    return db.query(models.Task).offset(skip).limit(limit).all()
+
+def get_user_tasks(db: Session, user_id: int, skip: int = 0, limit: int = 100):
+    return db.query(models.Task).join(models.TaskAssignment).filter(
+        models.TaskAssignment.user_id == user_id
+    ).offset(skip).limit(limit).all()
+
+def get_project_tasks(db: Session, project_id: int, skip: int = 0, limit: int = 100):
+    return db.query(models.Task).filter(
+        models.Task.project_id == project_id
+    ).offset(skip).limit(limit).all()
+
+def create_task(db: Session, task: schemas.TaskCreate, creator_id: int):
+    db_task = models.Task(
+        title=task.title,
+        description=task.description,
+        project_id=task.project_id,
+        status="not_started",
+        priority=task.priority,
+        due_date=task.due_date,
+        estimated_hours=task.estimated_hours
+    )
+    db.add(db_task)
+    db.commit()
+    db.refresh(db_task)
+    assign_task(db, db_task.id, creator_id)
+    return db_task
+
+def assign_task(db: Session, task_id: int, user_id: int):
+    db_assignment = models.TaskAssignment(task_id=task_id, user_id=user_id)
+    db.add(db_assignment)
+    db.commit()
+    return db_assignment
+
+# Chat operations
+def get_or_create_chat_session(db: Session, user_id: int):
+    session = db.query(models.ChatSession).filter(
+        models.ChatSession.user_id == user_id,
+        models.ChatSession.ended_at == None
+    ).first()
+    
+    if not session:
+        session = models.ChatSession(user_id=user_id)
+        db.add(session)
+        db.commit()
+        db.refresh(session)
+    return session
+
+def create_chat_message(db: Session, session_id: int, user_id: int, message: str, is_bot: bool):
+    db_message = models.ChatMessage(
+        session_id=session_id,
+        user_id=user_id,
+        message=message,
+        is_bot=is_bot
+    )
+    db.add(db_message)
+    db.commit()
+    db.refresh(db_message)
+    return db_message
+
+# Permission operations
+def user_has_permission(db: Session, user_id: int, permission_name: str):
+    user = get_user(db, user_id)
+    if not user:
+        return False
+    
+    for role in user.roles:
+        for permission in role.permissions:
+            if permission.name == permission_name:
+                return True
+    return False
+
+def user_has_project_access(db: Session, user_id: int, project_id: int):
+    project = get_project(db, project_id)
+    if not project:
+        return False
+    if project.manager_id == user_id:
+        return True
+    if db.query(models.TaskAssignment).join(models.Task).filter(
+        models.TaskAssignment.user_id == user_id,
+        models.Task.project_id == project_id
+    ).first():
+        return True
+    return False
+
+def initialize_roles_and_permissions(db: Session):
+    # Create default roles
+    manager_role = db.query(models.Role).filter(models.Role.name == "manager").first()
+    if not manager_role:
+        manager_role = models.Role(name="manager", description="Project Manager")
+        db.add(manager_role)
+        db.commit()
+    
+    member_role = db.query(models.Role).filter(models.Role.name == "member").first()
+    if not member_role:
+        member_role = models.Role(name="member", description="Team Member")
+        db.add(member_role)
+        db.commit()
+    
+    # Create permissions
+    permissions = [
+        ("project:create", "Create new projects"),
+        ("project:read", "View projects"),
+        ("project:read_all", "View all projects"),
+        ("project:update", "Update projects"),
+        ("project:delete", "Delete projects"),
+        ("task:create", "Create tasks"),
+        ("task:read", "View tasks"),
+        ("task:update", "Update tasks"),
+        ("task:delete", "Delete tasks"),
+        ("user:create", "Create users"),
+        ("user:read", "View users"),
+        ("user:update", "Update users"),
+        ("user:delete", "Delete users"),
+        ("chat:read", "Use chatbot"),
+        ("chat:write", "Update data via chatbot")
+    ]
+    
+    for perm_name, perm_desc in permissions:
+        permission = db.query(models.Permission).filter(models.Permission.name == perm_name).first()
+        if not permission:
+            permission = models.Permission(name=perm_name, description=perm_desc)
+            db.add(permission)
+            db.commit()
+    
+    # Assign permissions to manager role
+    manager_permissions = [
+        "project:create", "project:read", "project:read_all", "project:update", "project:delete",
+        "task:create", "task:read", "task:update", "task:delete",
+        "user:read",
+        "chat:read", "chat:write"
+    ]
+    
+    for perm_name in manager_permissions:
+        permission = db.query(models.Permission).filter(models.Permission.name == perm_name).first()
+        if permission:
+            role_perm = db.query(models.RolePermission).filter(
+                models.RolePermission.role_id == manager_role.id,
+                models.RolePermission.permission_id == permission.id
+            ).first()
+            if not role_perm:
+                role_perm = models.RolePermission(role_id=manager_role.id, permission_id=permission.id)
+                db.add(role_perm)
+                db.commit()
+    
+    # Assign permissions to member role
+    member_permissions = [
+        "project:read", "task:read", "chat:read"
+    ]
+    
+    for perm_name in member_permissions:
+        permission = db.query(models.Permission).filter(models.Permission.name == perm_name).first()
+        if permission:
+            role_perm = db.query(models.RolePermission).filter(
+                models.RolePermission.role_id == member_role.id,
+                models.RolePermission.permission_id == permission.id
+            ).first()
+            if not role_perm:
+                role_perm = models.RolePermission(role_id=member_role.id, permission_id=permission.id)
+                db.add(role_perm)
+                db.commit()
+    
+    return True
+__________________________________________________________________
